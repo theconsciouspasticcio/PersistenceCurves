@@ -1,0 +1,217 @@
+#+TITLE: Persistent Curves
+
+#+AUTHOR: asbestos
+#+DATE: 2024:10:25
+#+OPTIONS: h:3 num:t||nil toc:t||nil
+# #+SETUPFILE: ~/Desktop/tex/TeX-setups/quick-n-dirty.org
+#+LATEX_CLASS: article
+#+LATEX_CLASS_OPTIONS: [10pt]
+#+LATEX_HEADER: \input{}
+#+EXCLUDE_TAGS: noexport ignore
+#+STARTUP: latexpreview hideblocks
+
+
+
+
+* Getting Started
+We'll first import some packages and get our initial diagrams from the
+example image
+
+** Packages
+The code below imports the =persistencecurve= package (the subject of
+this tutorial), =matplotlib= for plotting and visualization, =opencv-python=
+for image handling, and =gudhi= for persistence diagram computations.
+Finally we define the function =get_PD=, which streamlines gudhi's
+process to produce persistence diagrams for an image.
+
+#+begin_src jupyter-python
+import persistencecurves as pc
+import matplotlib.pyplot as plt
+import numpy as np
+import cv2 as cv
+from PIL import Image
+import gudhi
+#function for gudhi's process
+def get_PD(image,inf_replace = float("inf")):
+    reshaped = np.reshape(image, [image.shape[0]*image.shape[1]], order = 'F')#reshape image, order="F" is necessary and should not be changed
+    Complex = gudhi.CubicalComplex(dimensions=image.shape, top_dimensional_cells=reshaped)    #initialize Cubical complex
+    Complex.persistence()    #compute persistence
+    #extract diagrams and make replacements
+    Dgm0=Complex.persistence_intervals_in_dimension(0)
+    Dgm0[Dgm0==float("inf")] = inf_replace
+    Dgm1=Complex.persistence_intervals_in_dimension(1)
+    return Dgm0,Dgm1
+#+end_src
+
+#+RESULTS:
+
+** The example image
+The image we're using is one from the texture database, =UIUCTex=. It is
+a grayscale image of bricks. Specifically, it is image =T15_34= in that
+database.
+
+We will use opencv to load the image and matplotlib to view it.
+
+#+begin_src jupyter-python
+image = Image.open("Bricks.jpg")
+arr = np.array(image)
+print(arr.shape)
+image
+#+end_src
+
+#+RESULTS:
+:RESULTS:
+: (480, 640)
+[[./.ob-jupyter/ed34813f683b564d253d15e8e968ef3a3cdae7bb.jpg]]
+:END:
+
+#+begin_example
+(480, 640)
+#+end_example
+
+
+
+#+begin_src jupyter-python
+# Assuming 'get_PD' and 'D0, D1' refer to some persistence diagram function (PD)
+# D0, D1 would be some persistence homology diagrams extracted from the image array 'arr'
+D0, D1 = get_PD(arr)  # You'll need to define or import this function
+
+# Create subplots
+fig, ax = plt.subplots(1, 2, figsize=(20, 8))
+
+# Plot the first persistence diagram
+a = ax[0]
+a.scatter(D0[:, 0], D0[:, 1])  # Scatter plot for D0
+a.scatter(np.min(D0), 256, marker='D', c='r')  # Infinite generator
+
+# Plot the second persistence diagram
+a = ax[1]
+a.scatter(D1[:, 0], D1[:, 1])  # Scatter plot for D1
+
+plt.show()
+#+end_src
+
+#+RESULTS:
+[[./.ob-jupyter/3809447dba475509429d5113e1668d497e59476c.png]]
+* Persistence Curves [[Paper](#)]
+  Now, we'll use the =persistencecurves= (PC) package to calculate a variety of persistence curves.
+
+** The Diagram Class and its Attributes
+
+  The door into the PC package is through the diagram class. The =Diagram= class transforms an n x 2 array to a format ready for functionalization. This function has as parameters:
+
+  - Dgm: the input diagram
+  - globalmaxdeath (default=None): This value should be used in the case that the process by which you compute persistence diagrams has some maximum possible death (e.g. for grayscale images, this would be 256). In practice, this value would be used to replace the infinite death if =inf_policy = replace=.
+  - infinitedeath (default=inf): This is the value representative of an infinite death value. For example, by default GUDHI returns =inf=, but some other persistent homology may return the maximum non-overflow value, e.g. 1.7976931348623157e+308, at which point that value should be used for =infinitedeath=.
+  - inf_policy: This parameter determines the policy when dealing with infinite generators. If =inf_policy = replace= and =globalmaxdeath != None=, values equal to =infinitedeath= will be replaced by the maximum finite death value of the diagram. If =inf_policy = replace= and =globalmaxdeath != None= then the =Diagram= transformer will replace the infinite value (=infinitedeath=) with =globalmaxdeath=. Finally, if =inf_policy = remove=, the =Diagram= transformer will delete the generators whose death is =infinitedeath=.
+
+  Besides the PC transformations we will discuss later, the =Diagram= class has a few attributes and other functions available.
+
+  - =Birth=: returns an n x 1 array of all of the birth values of the input diagram
+  - =Death=: returns an n x 1 array of all of the death values of the input diagram
+  - =diagram=: returns an n x 2 array of the diagram resulting from transformation by the =Diagram= transformer
+  - =globalmaxdeath=: returns the set value for this parameter
+
+#+begin_src jupyter-python
+P0 = pc.Diagram(D0)
+
+
+print("shape: ",P0.shape)
+
+print("diagram:")
+print(P0.diagram)
+
+print("plot:")
+P0.plot()
+
+#+end_src
+
+#+RESULTS:
+:RESULTS:
+: shape (18663, 2)
+: diagram:
+: [[ 38.  40.]
+:  [ 40.  43.]
+:  [ 42.  43.]
+:  ...
+:  [225. 235.]
+:  [234. 236.]
+:  [235. 237.]]
+: plot:
+[[./.ob-jupyter/e611296940e8b0ef680496463e47e3d08d398f3c.png]]
+:END:
+
+
+
+
+** Built-in Persistence Curves
+
+There are several built-in persistence curve transformations in this package. We list several of them here:
+(Proposed in the PC paper linked above):
+- =Betticurve=
+- =lifecurve=
+- =midlifecurve=
+- =normalizedlifecurve=
+etc.
+
+- Atienza et al. =lifentropycurve= (aka the Persistent Entropy Summary Function)
+- Bubenik: =landscape=
+- Chung et al.: =gaussian_Betti=, =gaussian_life=
+
+To use any of these functions, simply supply parameters for a 1D mesh.
+Specifically, where the mesh starts, where it ends, and how many points you'd like evenly spaced in the mesh.
+These are the same parameters as NumPy's linspace function.
+
+For the =landscape= function, you also need to supply the level *k*
+#+begin_src jupyter-python
+curve = P0.normalizedlifecurve(meshstart=0, meshstop=255, num_in_mesh=256)
+plt.plot(curve)
+#+end_src
+
+#+RESULTS:
+:RESULTS:
+| <matplotlib.lines.Line2D | at | 0x72b450ccf6e0> |
+[[./.ob-jupyter/1dea5f02ccaea818e6b649cf9461db42f925391f.png]]
+:END:
+
+#+begin_src jupyter-python
+# First four persistence landscapes
+curvelist = [P0.landscape(k, 0, 255, 256) for k in range(4)]
+for c in curvelist:
+    plt.plot(c)
+#+end_src
+
+#+RESULTS:
+[[./.ob-jupyter/72640d9c9f5979025520b9dedb4434233c22eace.png]]
+
+
+
+** Custom Curves
+
+This package also allows for the construction of custom curves.
+
+Besides the usual mesh, we also need to define a function =fun= that has four inputs, D, x, y, t, and a function =stat=
+that maps sets to scalars. See the example below.
+
+
+
+
+#+begin_src jupyter-python
+def fun(D, x, y, t): # x=birth , y=death, t=input of the curve, corner of the fundamental box?, D=diagram
+    return y+x + t
+
+def stat(M):
+    if len(M) == 0:
+        return 0
+    else:
+        return np.median(M)
+
+plt.plot(P0.custom_curve(fun, stat, 0, 255, 256))
+
+#+end_src
+
+#+RESULTS:
+:RESULTS:
+| <matplotlib.lines.Line2D | at | 0x72b451d418b0> |
+[[./.ob-jupyter/959378757d7bc6c95fe0d2838407ebd11a770968.png]]
+:END:
